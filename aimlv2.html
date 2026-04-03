@@ -1,1577 +1,415 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Hand-Tracked Virtual Chip Lab</title>
-    
-    <!-- Tailwind CSS for styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Font Awesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- MediaPipe Libraries for Hand Tracking -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
-    <!-- Three.js for 3D Rendering -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-    <style>
-        body {
-            background-color: #0f172a; /* Slate 900 */
-            color: white;
-            overflow: hidden;
-            user-select: none;
-        }
-
-        #virtual-cursor {
-            position: absolute;
-            width: 24px;
-            height: 24px;
-            background-color: rgba(56, 189, 248, 0.8);
-            border: 2px solid white;
-            border-radius: 50%;
-            pointer-events: none;
-            transform: translate(-50%, -50%);
-            z-index: 9999;
-            transition: background-color 0.1s, width 0.1s, height 0.1s, border-color 0.1s, box-shadow 0.1s;
-            box-shadow: 0 0 15px rgba(56, 189, 248, 0.6);
-        }
-
-        #virtual-cursor.pinching {
-            background-color: rgba(34, 197, 94, 0.9);
-            width: 18px;
-            height: 18px;
-            box-shadow: 0 0 25px rgba(34, 197, 94, 0.8);
-        }
-
-        /* Magnetic Snap Style */
-        #virtual-cursor.magnetic-lock {
-            background-color: rgba(250, 204, 21, 0.9); /* Yellow 400 */
-            border-color: #fef08a; /* Yellow 200 */
-            box-shadow: 0 0 25px rgba(250, 204, 21, 0.8);
-            width: 32px;
-            height: 32px;
-        }
-
-        /* Camera Rotation Style */
-        #virtual-cursor.rotating-cam {
-            background-color: rgba(168, 85, 247, 0.9); /* Purple */
-            border-color: #e9d5ff;
-            box-shadow: 0 0 25px rgba(168, 85, 247, 0.8);
-            border-radius: 10%; 
-        }
-
-        .spawner-btn {
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-        
-        .spawner-btn:hover, .spawner-btn.hovered-by-cursor {
-            background-color: #1e293b;
-            transform: scale(1.05);
-            border-color: #60a5fa;
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
-        }
-
-        .trash-zone.hovered-by-cursor {
-            background-color: rgba(239, 68, 68, 0.2);
-            border-color: #ef4444;
-            color: #fca5a5;
-        }
-
-        .course-btn { transition: all 0.2s; }
-        .course-btn.active { background-color: rgba(79, 70, 229, 0.4); border-color: #818cf8; }
-        .course-btn:hover, .course-btn.hovered-by-cursor { background-color: rgba(79, 70, 229, 0.2); }
-
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; border-radius: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #60a5fa; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clinical Triage Copilot (MedGemma Workflow)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <style>
+    body { background: #020617; color: #e2e8f0; }
+    .card { background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(59, 130, 246, 0.25); backdrop-filter: blur(4px); }
+    .pill { border: 1px solid rgba(148,163,184,.35); }
+    .scrollbar::-webkit-scrollbar { width: 8px; }
+    .scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 6px; }
+    .chat-bubble-ai { background: #0f172a; border: 1px solid #334155; }
+    .chat-bubble-user { background: #1e293b; border: 1px solid #475569; }
+  </style>
 </head>
-<body class="h-screen w-screen flex flex-col font-sans">
-
-    <!-- Virtual Cursor Overlay -->
-    <div id="virtual-cursor" class="hidden"></div>
-
-    <!-- Initialization Screen -->
-    <div id="start-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 bg-opacity-95 backdrop-blur-sm">
-        <div class="max-w-md text-center">
-            <i class="fa-solid fa-robot text-6xl text-blue-400 mb-6"></i>
-            <h1 class="text-4xl font-bold mb-4">3D Virtual Fab Lab</h1>
-            <p class="text-slate-300 mb-8">Design logic chips and build modular robots! Pinch & drag to place components. Drop mechanical parts onto <b>Green Sockets</b> to snap them together.</p>
-            
-            <button id="start-camera-btn" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 rounded-lg text-xl font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-3 w-full">
-                <i class="fa-solid fa-camera"></i> Allow Camera & Start
-            </button>
-            <p id="loading-text" class="text-blue-400 mt-4 hidden animate-pulse">Loading AI & 3D Physics Engines...</p>
+<body class="min-h-screen p-4 md:p-6">
+  <div class="max-w-7xl mx-auto space-y-4">
+    <header class="card rounded-2xl p-4 md:p-6">
+      <div class="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
+        <div>
+          <h1 class="text-2xl md:text-3xl font-bold text-sky-300 flex items-center gap-3">
+            <i class="fa-solid fa-stethoscope"></i>
+            Clinical Triage Copilot
+          </h1>
+          <p class="text-slate-300 mt-1">LLM + Protocol Engine + Structured Safety Workflow (MedGemma-style architecture).</p>
         </div>
+        <div class="text-xs md:text-sm text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 max-w-xl">
+          <b>Medical Safety Notice:</b> Educational prototype only. Not a diagnosis system. Always escalate emergencies (severe bleeding, chest pain, breathing distress, fainting, suicidal ideation) to licensed clinicians/ER.
+        </div>
+      </div>
+    </header>
+
+    <main class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <section class="card rounded-2xl p-4 space-y-4 xl:col-span-1">
+        <h2 class="text-lg font-semibold text-indigo-300 flex items-center gap-2"><i class="fa-solid fa-sliders"></i> Engine Setup</h2>
+
+        <label class="block text-sm text-slate-300">Chief complaint</label>
+        <select id="symptomSelect" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-2">
+          <option value="irregular_bleeding">Irregular bleeding</option>
+          <option value="chest_pain">Chest pain</option>
+          <option value="fever_cough">Fever + cough</option>
+        </select>
+
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-700">
+            <div class="text-slate-400 mb-1">Medical Reasoner</div>
+            <div class="font-semibold text-emerald-300">MedGemma</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-700">
+            <div class="text-slate-400 mb-1">Conversation LLM</div>
+            <div class="font-semibold text-cyan-300">Llama/Mistral</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-700 col-span-2">
+            <div class="text-slate-400 mb-1">Grounding + Safety</div>
+            <div class="font-semibold text-fuchsia-300">Protocol JSON + RAG Guideline Hooks + Rule Scoring</div>
+          </div>
+        </div>
+
+        <button id="startBtn" class="w-full bg-sky-600 hover:bg-sky-500 rounded-lg font-semibold py-2.5">Start Triage Interview</button>
+
+        <div class="space-y-2">
+          <h3 class="font-semibold text-sky-300 text-sm">Protocol Preview</h3>
+          <pre id="protocolPreview" class="text-xs bg-slate-950 border border-slate-700 rounded-xl p-3 max-h-64 overflow-auto scrollbar"></pre>
+        </div>
+      </section>
+
+      <section class="card rounded-2xl p-4 xl:col-span-2 grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div class="lg:col-span-3 flex flex-col">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-lg font-semibold text-emerald-300"><i class="fa-solid fa-comments mr-2"></i>Clinical Interview Loop</h2>
+            <span id="stepBadge" class="pill rounded-full px-3 py-1 text-xs">Not started</span>
+          </div>
+
+          <div id="chat" class="flex-1 min-h-[340px] max-h-[480px] overflow-auto scrollbar rounded-xl p-3 bg-slate-950 border border-slate-700 space-y-3"></div>
+
+          <div class="mt-3 space-y-2">
+            <div id="currentQuestion" class="text-sm text-slate-200 rounded-lg border border-slate-700 bg-slate-900 p-3">Press “Start Triage Interview”.</div>
+            <div class="flex gap-2">
+              <button class="quickAnswer px-3 py-2 rounded-lg bg-emerald-700/70 hover:bg-emerald-600 text-sm" data-answer="yes">Yes</button>
+              <button class="quickAnswer px-3 py-2 rounded-lg bg-rose-700/70 hover:bg-rose-600 text-sm" data-answer="no">No</button>
+              <button class="quickAnswer px-3 py-2 rounded-lg bg-indigo-700/70 hover:bg-indigo-600 text-sm" data-answer="unsure">Not sure</button>
+            </div>
+            <div class="flex gap-2">
+              <input id="answerInput" placeholder="Type patient answer..." class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2" />
+              <button id="sendBtn" class="bg-sky-600 hover:bg-sky-500 px-4 rounded-lg">Send</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-3">
+          <div class="bg-slate-950 border border-slate-700 rounded-xl p-3">
+            <h3 class="font-semibold text-indigo-300 mb-2">Live Differential Ranking</h3>
+            <div id="differentialList" class="space-y-2 text-sm"></div>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-700 rounded-xl p-3">
+            <h3 class="font-semibold text-rose-300 mb-2">Emergency Flags</h3>
+            <ul id="emergencyFlags" class="list-disc pl-5 text-sm text-slate-300"></ul>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-700 rounded-xl p-3">
+            <h3 class="font-semibold text-cyan-300 mb-2">Structured Output</h3>
+            <pre id="structuredOutput" class="text-xs max-h-72 overflow-auto scrollbar"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<script>
+const PROTOCOLS = {
+  irregular_bleeding: {
+    symptom: "irregular_bleeding",
+    emergency_flags: ["pregnancy_positive", "heavy_bleeding", "fainting", "severe_pelvic_pain"],
+    questions: [
+      { id: "pregnancy_test", priority: 1, text: "Is there any chance of pregnancy or positive home pregnancy test?", info_gain: 0.95 },
+      { id: "pad_count", priority: 1, text: "Are you soaking more than 1 pad per hour or passing large clots?", info_gain: 0.92 },
+      { id: "fainting", priority: 1, text: "Any dizziness, fainting, or shortness of breath?", info_gain: 0.90 },
+      { id: "pain", priority: 2, text: "Do you have severe pelvic pain or one-sided abdominal pain?", info_gain: 0.83 },
+      { id: "fever_discharge", priority: 2, text: "Any fever or foul-smelling discharge?", info_gain: 0.80 },
+      { id: "pcos_signs", priority: 3, text: "Any acne, weight gain, excess facial hair, or missed periods before this?", info_gain: 0.74 },
+      { id: "thyroid_signs", priority: 3, text: "Any fatigue, cold/heat intolerance, constipation, or hair changes?", info_gain: 0.72 }
+    ],
+    tests: ["Urine/serum pregnancy test", "CBC", "TSH", "Pelvic ultrasound", "STI testing if indicated"],
+    likely_conditions: ["pregnancy_complication", "anovulatory_bleeding_PCOS", "thyroid_related_bleeding", "fibroid_or_polyp", "pelvic_infection", "endometrial_risk_if_age_45_plus"]
+  },
+  chest_pain: {
+    symptom: "chest_pain",
+    emergency_flags: ["crushing_pain", "radiation_to_arm_jaw", "breathlessness", "syncope", "neurologic_deficit"],
+    questions: [
+      { id: "onset", priority: 1, text: "Did chest pain start suddenly and is it severe/pressure-like?", info_gain: 0.95 },
+      { id: "radiation", priority: 1, text: "Does pain radiate to arm, jaw, or back?", info_gain: 0.93 },
+      { id: "dyspnea", priority: 1, text: "Any shortness of breath, sweating, nausea, or fainting?", info_gain: 0.93 },
+      { id: "pleuritic", priority: 2, text: "Is pain worse on deep breathing or cough?", info_gain: 0.82 },
+      { id: "reproducible", priority: 3, text: "Is the pain reproducible by pressing the chest wall?", info_gain: 0.68 }
+    ],
+    tests: ["ECG", "Troponin", "Chest X-ray", "D-dimer/CTPA if PE suspected"],
+    likely_conditions: ["acute_coronary_syndrome", "pulmonary_embolism", "pneumonia_or_pleurisy", "musculoskeletal_pain", "gastroesophageal_reflux"]
+  },
+  fever_cough: {
+    symptom: "fever_cough",
+    emergency_flags: ["oxygen_drop", "confusion", "severe_breathlessness", "cyanosis", "dehydration"],
+    questions: [
+      { id: "duration", priority: 1, text: "How many days of fever and cough?", info_gain: 0.88 },
+      { id: "breathing", priority: 1, text: "Any difficulty breathing at rest or oxygen saturation below 92%?", info_gain: 0.94 },
+      { id: "sputum", priority: 2, text: "Is there colored sputum or blood in sputum?", info_gain: 0.82 },
+      { id: "chest_pain", priority: 2, text: "Any chest pain with breathing?", info_gain: 0.80 },
+      { id: "risk", priority: 3, text: "Do you have asthma/COPD, diabetes, immune suppression, or age >65?", info_gain: 0.78 }
+    ],
+    tests: ["Pulse oximetry", "CBC", "CRP", "COVID/flu test", "Chest X-ray"],
+    likely_conditions: ["viral_URTI", "influenza_or_covid", "community_acquired_pneumonia", "asthma_exacerbation", "tuberculosis_if_risk"]
+  }
+};
+
+const SCORE_RULES = {
+  irregular_bleeding: {
+    pregnancy_test: { yes: { pregnancy_complication: +30 }, no: { pregnancy_complication: -25 } },
+    pad_count: { yes: { pregnancy_complication: +8, fibroid_or_polyp: +6 }, no: {} },
+    fainting: { yes: { pregnancy_complication: +10 }, no: {} },
+    pain: { yes: { pelvic_infection: +8, pregnancy_complication: +8 }, no: { pelvic_infection: -3 } },
+    fever_discharge: { yes: { pelvic_infection: +18 }, no: { pelvic_infection: -10 } },
+    pcos_signs: { yes: { anovulatory_bleeding_PCOS: +16 }, no: { anovulatory_bleeding_PCOS: -8 } },
+    thyroid_signs: { yes: { thyroid_related_bleeding: +14 }, no: { thyroid_related_bleeding: -8 } }
+  },
+  chest_pain: {
+    onset: { yes: { acute_coronary_syndrome: +12 }, no: {} },
+    radiation: { yes: { acute_coronary_syndrome: +18 }, no: { acute_coronary_syndrome: -7 } },
+    dyspnea: { yes: { pulmonary_embolism: +12, acute_coronary_syndrome: +10 }, no: {} },
+    pleuritic: { yes: { pulmonary_embolism: +10, pneumonia_or_pleurisy: +10 }, no: {} },
+    reproducible: { yes: { musculoskeletal_pain: +15, acute_coronary_syndrome: -8 }, no: {} }
+  },
+  fever_cough: {
+    breathing: { yes: { community_acquired_pneumonia: +16, asthma_exacerbation: +10 }, no: {} },
+    sputum: { yes: { community_acquired_pneumonia: +14 }, no: { viral_URTI: +5 } },
+    chest_pain: { yes: { community_acquired_pneumonia: +8 }, no: {} },
+    risk: { yes: { community_acquired_pneumonia: +8, tuberculosis_if_risk: +8 }, no: {} },
+    duration: { yes: {}, no: {} }
+  }
+};
+
+let state = null;
+
+const el = {
+  symptomSelect: document.getElementById('symptomSelect'),
+  protocolPreview: document.getElementById('protocolPreview'),
+  startBtn: document.getElementById('startBtn'),
+  chat: document.getElementById('chat'),
+  stepBadge: document.getElementById('stepBadge'),
+  currentQuestion: document.getElementById('currentQuestion'),
+  answerInput: document.getElementById('answerInput'),
+  sendBtn: document.getElementById('sendBtn'),
+  differentialList: document.getElementById('differentialList'),
+  emergencyFlags: document.getElementById('emergencyFlags'),
+  structuredOutput: document.getElementById('structuredOutput')
+};
+
+function renderProtocolPreview() {
+  const protocol = PROTOCOLS[el.symptomSelect.value];
+  el.protocolPreview.textContent = JSON.stringify(protocol, null, 2);
+}
+
+function initState(symptomKey) {
+  const protocol = PROTOCOLS[symptomKey];
+  const base = 100 / protocol.likely_conditions.length;
+  const scores = Object.fromEntries(protocol.likely_conditions.map(c => [c, base]));
+
+  state = {
+    symptomKey,
+    chief_complaint: protocol.symptom,
+    emergency_flags: [],
+    history_questions: [],
+    risk_factors: [],
+    likely_causes: scores,
+    recommended_tests: protocol.tests,
+    initial_advice: "",
+    when_to_escalate_to_doctor: "",
+    asked: new Set(),
+    complete: false
+  };
+
+  el.chat.innerHTML = "";
+  pushAI(`Chief complaint recorded as: <b>${protocol.symptom.replaceAll('_', ' ')}</b>. I will ask high-information questions first.`);
+  askNextQuestion();
+  refreshPanels();
+}
+
+function chooseNextQuestion() {
+  const protocol = PROTOCOLS[state.symptomKey];
+  const remaining = protocol.questions.filter(q => !state.asked.has(q.id));
+  if (!remaining.length) return null;
+
+  remaining.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return b.info_gain - a.info_gain;
+  });
+  return remaining[0];
+}
+
+function parseAnswer(text) {
+  const raw = text.trim().toLowerCase();
+  if (!raw) return "unsure";
+  if (["yes", "y", "yeah", "true", "positive"].some(k => raw.includes(k))) return "yes";
+  if (["no", "n", "none", "negative", "not"].some(k => raw.includes(k))) return "no";
+  return "unsure";
+}
+
+function applyScoring(qid, normalizedAnswer, rawAnswer) {
+  const rules = SCORE_RULES[state.symptomKey]?.[qid]?.[normalizedAnswer] || {};
+  for (const [condition, delta] of Object.entries(rules)) {
+    state.likely_causes[condition] = Math.max(0, (state.likely_causes[condition] || 0) + delta);
+  }
+
+  const redFlagMap = {
+    irregular_bleeding: {
+      pregnancy_test: ["yes", "pregnancy_positive"],
+      pad_count: ["yes", "heavy_bleeding"],
+      fainting: ["yes", "fainting"],
+      pain: ["yes", "severe_pelvic_pain"]
+    },
+    chest_pain: {
+      onset: ["yes", "crushing_pain"],
+      radiation: ["yes", "radiation_to_arm_jaw"],
+      dyspnea: ["yes", "breathlessness"]
+    },
+    fever_cough: {
+      breathing: ["yes", "severe_breathlessness"]
+    }
+  };
+
+  const mapping = redFlagMap[state.symptomKey][qid];
+  if (mapping && mapping[0] === normalizedAnswer && !state.emergency_flags.includes(mapping[1])) {
+    state.emergency_flags.push(mapping[1]);
+  }
+
+  if (/(diabetes|hypertension|pcos|thyroid|copd|asthma|pregnant|iud|cancer|smoker)/i.test(rawAnswer)) {
+    state.risk_factors.push(rawAnswer);
+  }
+}
+
+function askNextQuestion() {
+  const next = chooseNextQuestion();
+  if (!next) {
+    state.complete = true;
+    finalizeAssessment();
+    return;
+  }
+
+  state.asked.add(next.id);
+  state.currentQuestion = next;
+  el.stepBadge.textContent = `Question ${state.asked.size}`;
+  el.currentQuestion.textContent = next.text;
+  pushAI(next.text);
+}
+
+function handleAnswer(text) {
+  if (!state || !state.currentQuestion || state.complete) return;
+  const qid = state.currentQuestion.id;
+  const normalized = parseAnswer(text);
+
+  state.history_questions.push({
+    question_id: qid,
+    question: state.currentQuestion.text,
+    answer: text,
+    normalized
+  });
+
+  pushUser(text);
+  applyScoring(qid, normalized, text);
+
+  if (state.emergency_flags.length >= 2) {
+    state.complete = true;
+    finalizeAssessment(true);
+  } else {
+    askNextQuestion();
+  }
+
+  refreshPanels();
+}
+
+function finalizeAssessment(emergency = false) {
+  const ranked = Object.entries(state.likely_causes)
+    .sort((a, b) => b[1] - a[1])
+    .map(([condition, score]) => ({ condition, score: Number(score.toFixed(1)) }));
+
+  const top = ranked.slice(0, 3).map(r => r.condition.replaceAll('_', ' ')).join(', ');
+  state.initial_advice = emergency
+    ? "Potential red flags detected. Do NOT wait for home management. Seek urgent in-person evaluation now."
+    : "Non-emergent pattern so far, but clinical confirmation is required. Arrange outpatient evaluation with recommended tests.";
+
+  state.when_to_escalate_to_doctor = state.emergency_flags.length
+    ? `Escalate immediately due to: ${state.emergency_flags.join(', ')}.`
+    : "Escalate if symptoms worsen, new red flags appear, or no improvement within 24-48h.";
+
+  pushAI(`<b>Interview complete.</b> Top likely causes: ${top}.`);
+  pushAI(`<b>Advice:</b> ${state.initial_advice}`);
+
+  el.stepBadge.textContent = emergency ? "Emergency escalation" : "Assessment complete";
+  el.currentQuestion.textContent = "Assessment complete. You can restart with another symptom.";
+}
+
+function normalizedLikelyCauses() {
+  const total = Object.values(state.likely_causes).reduce((a,b) => a+b, 0) || 1;
+  return Object.entries(state.likely_causes)
+    .map(([k, v]) => ({ condition: k, probability: Number(((v / total) * 100).toFixed(1)) }))
+    .sort((a, b) => b.probability - a.probability);
+}
+
+function refreshPanels() {
+  if (!state) return;
+
+  const ranked = normalizedLikelyCauses();
+  el.differentialList.innerHTML = ranked.map((r, idx) => `
+    <div class="flex items-center justify-between gap-2">
+      <div class="truncate"><span class="text-slate-400 mr-1">${idx + 1}.</span>${r.condition.replaceAll('_', ' ')}</div>
+      <div class="pill rounded-full px-2 py-1 text-xs">${r.probability}%</div>
     </div>
-
-    <!-- Courses Modal Overlay -->
-    <div id="courses-modal" class="hidden absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 sm:p-8">
-        <div class="bg-slate-800 border-2 border-indigo-500 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.3)] w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden pointer-events-auto">
-            <div class="flex justify-between items-center bg-slate-900 p-6 border-b border-slate-700 shrink-0">
-                <h2 class="text-3xl font-bold text-indigo-400 flex items-center gap-3"><i class="fa-solid fa-graduation-cap"></i> Academy: Select a Course</h2>
-                <button id="close-courses-btn" class="text-slate-400 hover:text-red-400 transition-colors cursor-pointer p-2 rounded-full hover:bg-slate-800 border border-transparent hover:border-red-500/50">
-                    <i class="fa-solid fa-xmark text-3xl pointer-events-none"></i>
-                </button>
-            </div>
-            
-            <div class="flex flex-1 overflow-hidden">
-                <!-- Course List Sidebar -->
-                <div class="w-1/3 bg-slate-900/50 border-r border-slate-700 p-4 overflow-y-auto custom-scrollbar space-y-2" id="course-list-container">
-                    <!-- Populated dynamically by JS -->
-                </div>
-
-                <!-- Course Content Area -->
-                <div class="w-2/3 p-8 overflow-y-auto custom-scrollbar text-slate-300 relative flex flex-col">
-                    <div id="course-content-container" class="space-y-8 text-lg leading-relaxed mb-20">
-                        <!-- Populated dynamically by JS -->
-                    </div>
-                    
-                    <!-- Fixed bottom action bar -->
-                    <div class="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-slate-800 via-slate-800 to-transparent flex justify-end mt-auto">
-                        <button id="start-course-btn" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xl rounded-xl shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-3">
-                            <i class="fa-solid fa-play"></i> Start Lab Missions
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Main App UI -->
-    <div class="flex-1 flex overflow-hidden">
-        
-        <!-- Left Sidebar: Parts Bin -->
-        <div class="w-64 bg-slate-800 border-r border-slate-700 p-4 flex flex-col z-10 shadow-2xl relative" id="sidebar">
-            <div class="mb-4 flex items-center gap-3">
-                <i class="fa-solid fa-boxes-stacked text-2xl text-blue-400"></i>
-                <h2 class="text-xl font-bold">Parts Bin</h2>
-            </div>
-            
-            <p class="text-xs text-slate-400 mb-4 italic">Pinch & Drag to place</p>
-
-            <div class="space-y-3 flex-1 overflow-y-auto pb-4 pr-1 custom-scrollbar">
-                
-                <div class="border-t border-slate-700 my-2 pt-2 text-xs text-slate-400 font-bold uppercase tracking-wider">Logic & IO</div>
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="SWITCH">
-                    <i class="fa-solid fa-toggle-on w-6 text-center text-slate-300"></i> Switch (In)
-                </div>
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="LED">
-                    <i class="fa-regular fa-lightbulb w-6 text-center text-red-400"></i> LED (Out)
-                </div>
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="AND">
-                    <div class="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center text-xs font-bold text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]">&</div> AND Gate
-                </div>
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="ARDUINO">
-                    <i class="fa-solid fa-microchip w-6 text-center text-sky-500"></i> Arduino CPU
-                </div>
-
-                <div class="border-t border-slate-700 my-2 pt-2 text-xs text-slate-400 font-bold uppercase tracking-wider text-green-400">Robotics Builder</div>
-                <p class="text-[10px] text-slate-400 leading-tight mb-2">Stack these parts onto <span class="text-green-400 font-bold">Green Sockets</span>!</p>
-
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="SERVO">
-                    <i class="fa-solid fa-motorcycle w-6 text-center text-indigo-400"></i> Servo Motor
-                </div>
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="ARM_LINK">
-                    <i class="fa-solid fa-ruler-vertical w-6 text-center text-yellow-500"></i> Arm Link
-                </div>
-                <div class="spawner-btn w-full text-left px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-3" data-type="GRIPPER">
-                    <i class="fa-solid fa-hand-holding w-6 text-center text-slate-400"></i> Gripper Claw
-                </div>
-                
-                <div class="border-t border-slate-700 my-2 pt-2 text-xs text-slate-400 font-bold uppercase tracking-wider">Academy</div>
-                <div id="btn-courses" class="w-full text-left px-4 py-3 rounded-lg border border-indigo-600/50 bg-indigo-900/20 hover:bg-indigo-900/50 hover:border-indigo-500 flex items-center gap-3 transition-all cursor-pointer text-indigo-300">
-                    <i class="fa-solid fa-book-open w-6 text-center text-indigo-400"></i> Browse Courses
-                </div>
-            </div>
-
-            <!-- Trash Zone -->
-            <div id="trash-zone" class="trash-zone h-20 mt-2 mb-4 shrink-0 rounded-lg border-2 border-dashed border-slate-600 flex flex-col items-center justify-center text-slate-500 transition-colors">
-                <i class="fa-solid fa-trash-can text-xl mb-1"></i>
-                <span class="text-[10px] uppercase font-bold tracking-widest">Drop to Delete</span>
-            </div>
-
-            <!-- Mini Video Feed -->
-            <div class="mt-auto border-t border-slate-700 pt-4 shrink-0">
-                <div class="relative w-full aspect-video bg-black rounded-lg overflow-hidden border border-slate-600">
-                    <video id="input_video" class="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]"></video>
-                    <canvas id="debug_canvas" class="absolute inset-0 w-full h-full pointer-events-none transform scale-x-[-1]"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Main 3D Canvas Area -->
-        <div class="flex-1 relative bg-slate-900" id="canvas-container">
-            <!-- Three.js will inject its canvas here -->
-            
-            <!-- Instructions Overlay -->
-            <div class="absolute top-4 right-4 bg-slate-800 border border-slate-600 p-4 rounded-lg shadow-lg max-w-xs pointer-events-none opacity-80 z-10">
-                <h3 class="font-bold text-blue-400 mb-2"><i class="fa-solid fa-cube"></i> 3D Controls</h3>
-                <ul class="text-sm text-slate-300 space-y-2">
-                    <li><i class="fa-solid fa-hand-holding w-5"></i> <b>Spawn:</b> Drag from sidebar.</li>
-                    <li><i class="fa-solid fa-link w-5 text-green-400"></i> <b>Build:</b> Drop mechanics on <span class="text-green-400 font-bold">Sockets</span>.</li>
-                    <li><i class="fa-solid fa-plug w-5 text-blue-400"></i> <b>Wire:</b> Drag from a <span class="text-blue-400 font-bold">blue pin</span>.</li>
-                    <li><i class="fa-solid fa-rotate w-5 text-purple-400"></i> <b class="text-purple-400">Rotate 3D:</b> Pinch empty space & drag.</li>
-                </ul>
-            </div>
-
-            <!-- AI Learning Assistant Panel -->
-            <div id="assistant-panel" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 border-2 border-blue-500 p-4 rounded-2xl shadow-[0_0_30px_rgba(59,130,246,0.3)] flex items-center gap-5 w-[750px] z-20 pointer-events-none transition-all duration-500">
-                <div class="bg-blue-900 w-14 h-14 rounded-full flex items-center justify-center text-blue-300 shadow-inner relative overflow-hidden flex-shrink-0">
-                    <i class="fa-solid fa-robot text-3xl z-10 animate-bounce"></i>
-                    <div class="absolute inset-0 bg-blue-400 opacity-20 animate-ping"></div>
-                </div>
-                <div class="flex-1">
-                    <div class="flex items-center gap-3 mb-1">
-                        <h3 class="text-blue-400 font-bold text-lg tracking-wide uppercase" id="assistant-title">Mission 1: Power it Up</h3>
-                    </div>
-                    <p class="text-slate-300 text-sm leading-relaxed" id="assistant-text">Let's build a computer! Drag a <b class="text-white">SWITCH</b> from the Parts Bin onto the 3D board. Then, give it a quick pinch to turn it ON.</p>
-                </div>
-                <div class="flex flex-col items-center justify-center min-w-[100px]">
-                    <div id="assistant-status" class="px-4 py-2 bg-slate-700 text-slate-400 rounded-full text-xs font-bold border border-slate-600 transition-colors shadow-inner text-center">IN PROGRESS</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // --- 1. Global DOM Elements ---
-        const videoElement = document.getElementById('input_video');
-        const debugCanvas = document.getElementById('debug_canvas');
-        const debugCtx = debugCanvas.getContext('2d');
-        const container = document.getElementById('canvas-container');
-        const cursorEl = document.getElementById('virtual-cursor');
-        
-        // --- 2. Simulation State ---
-        // parentId links a child component to the parent component it is stacked on
-        let placedComponents = []; // Array of {type, x, z, id, parentId, state, inputs, group3d, ...}
-        let wires = []; // Array of {from: id, to: id, mesh3d}
-        const GRID_SIZE = 40;
-        
-        // --- 3. Hand Tracking & Cursor State ---
-        let cursorX = window.innerWidth / 2;
-        let cursorY = window.innerHeight / 2;
-        let isPinching = false;
-        let lastPinchState = false;
-        
-        const TRACKPAD_MARGIN_X = 0.2; 
-        const TRACKPAD_MARGIN_Y = 0.2;
-        const SMOOTHING_FACTOR = 0.3; 
-
-        // --- 4. 3D Interaction State ---
-        let draggingNewType = null; 
-        let ghostMesh = null;       
-        let draggingNode = null;    
-        let draggingWireFrom = null;
-        let draggingWireMesh = null;
-        let pinchStartPos = {x: 0, y: 0};
-        let hoveredObject = null;   
-        let currentMagneticTarget = null; 
-
-        let isRotatingCam = false;
-        let camAngle = 0;
-        let camRadius = 450;
-        let startCamAngle = 0;
-
-        let historyStack = [];
-        let undoCooldown = 0;
-
-        function saveState() {
-            historyStack.push({
-                components: placedComponents.map(c => ({ id: c.id, type: c.type, x: c.x, z: c.z, parentId: c.parentId, state: c.state })),
-                wires: wires.map(w => ({ from: w.from, to: w.to }))
-            });
-            if (historyStack.length > 30) historyStack.shift();
-        }
-
-        function performUndo() {
-            if (historyStack.length === 0) {
-                playBeep(200, 'sawtooth', 0.1); 
-                return;
-            }
-
-            if (ghostMesh) { scene.remove(ghostMesh); ghostMesh = null; }
-            if (draggingWireMesh) { scene.remove(draggingWireMesh); draggingWireMesh = null; }
-            draggingNewType = null;
-            draggingNode = null;
-            draggingWireFrom = null;
-            isRotatingCam = false;
-
-            const prevState = historyStack.pop();
-
-            placedComponents.forEach(c => {
-                if(c.group3d.parent) c.group3d.parent.remove(c.group3d);
-            });
-            wires.forEach(w => { if (w.mesh3d) scene.remove(w.mesh3d); });
-
-            // Rebuild
-            placedComponents = prevState.components.map(c => {
-                const comp = { ...c, inputs: [], group3d: build3DComponent(c.type) };
-                comp.group3d.userData.id = comp.id; // Map for easy lookup
-                return comp;
-            });
-
-            // Re-attach hierarchy
-            placedComponents.forEach(c => {
-                if (c.parentId) {
-                    const parent = placedComponents.find(p => p.id === c.parentId);
-                    if (parent) {
-                        const socket = parent.group3d.getObjectByName("socket");
-                        if (socket) socket.add(c.group3d);
-                    } else {
-                        scene.add(c.group3d); // Fallback
-                    }
-                    c.group3d.position.set(0, 0, 0); // Local to socket
-                } else {
-                    scene.add(c.group3d);
-                    c.group3d.position.set(c.x, 0, c.z); // World space
-                }
-            });
-
-            wires = prevState.wires.map(w => ({ from: w.from, to: w.to, mesh3d: null }));
-
-            playBeep(300, 'triangle', 0.1);
-            setTimeout(() => playBeep(250, 'triangle', 0.15), 100);
-
-            simulateLogic();
-        }
-
-        // --- 5. Three.js Setup ---
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color('#0f172a');
-        scene.fog = new THREE.Fog('#0f172a', 500, 1500);
-
-        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 2000);
-        camera.position.set(0, 500, 450); 
-        camera.lookAt(0, 0, 0);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        container.appendChild(renderer.domElement);
-
-        const raycaster = new THREE.Raycaster();
-        const planeY0 = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); 
-
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(200, 400, 200);
-        dirLight.castShadow = true;
-        dirLight.shadow.camera.top = 400;
-        dirLight.shadow.camera.bottom = -400;
-        dirLight.shadow.camera.left = -400;
-        dirLight.shadow.camera.right = 400;
-        scene.add(dirLight);
-
-        const gridHelper = new THREE.GridHelper(2000, 50, 0x3b82f6, 0x1e293b);
-        gridHelper.position.y = -0.5;
-        gridHelper.material.opacity = 0.5;
-        gridHelper.material.transparent = true;
-        scene.add(gridHelper);
-
-        const floorGeo = new THREE.PlaneGeometry(2000, 2000);
-        const floorMat = new THREE.MeshStandardMaterial({ color: '#0f172a', depthWrite: false });
-        const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-        floorMesh.rotation.x = -Math.PI / 2;
-        floorMesh.position.y = -1;
-        floorMesh.receiveShadow = true;
-        scene.add(floorMesh);
-
-        window.addEventListener('resize', () => {
-            camera.aspect = container.clientWidth / container.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
-        });
-
-        // --- 6. 3D Model Generators (MODULAR ROBOTICS) ---
-        const componentStyles = {
-            'SWITCH':    { color: '#475569', active: '#3b82f6', label: 'SW', size: [60, 15, 60] },
-            'LED':       { color: '#475569', active: '#ef4444', label: '💡', size: [60, 15, 60] },
-            'AND':       { color: '#ef4444', active: '#ef4444', label: '&', size: [80, 15, 80] },
-            'ARDUINO':   { color: '#0284c7', active: '#38bdf8', label: 'UNO', size: [100, 15, 70] },
-            // Robotics
-            'SERVO':     { size: [50, 50, 50] },
-            'ARM_LINK':  { size: [20, 100, 20] },
-            'GRIPPER':   { size: [40, 20, 20] }
-        };
-
-        function createLabelTexture(text, bgColor, txtColor) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = bgColor;
-            ctx.fillRect(0, 0, 256, 256);
-            ctx.fillStyle = txtColor;
-            ctx.font = 'bold 60px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 128, 128);
-            return new THREE.CanvasTexture(canvas);
-        }
-
-        // Helper to add standard logic pins
-        function addLogicPins(group, w, h, d, type, hasInput, hasOutput) {
-            if (hasOutput) {
-                const pinGeo = new THREE.CylinderGeometry(4, 4, 15, 16);
-                pinGeo.rotateZ(Math.PI / 2);
-                const pinMat = new THREE.MeshStandardMaterial({ color: '#3b82f6', emissive: '#1d4ed8', roughness: 0.2, metalness: 0.8 });
-                const pinMesh = new THREE.Mesh(pinGeo, pinMat);
-                pinMesh.position.set(w/2 + 5, h/2, 0);
-                pinMesh.name = "pin_out";
-                pinMesh.userData = { isOutputPin: true }; 
-                group.add(pinMesh);
-            }
-            if (hasInput) {
-                const inPinGeo = new THREE.BoxGeometry(10, 5, 5);
-                const inPinMat = new THREE.MeshStandardMaterial({ color: '#94a3b8', metalness: 0.8 });
-                if (type === 'ARDUINO') {
-                    for(let i = -20; i <= 20; i+=20) {
-                        const pin = new THREE.Mesh(inPinGeo, inPinMat);
-                        pin.position.set(-w/2 - 5, h/2, i);
-                        pin.name = "pin_in";
-                        group.add(pin);
-                    }
-                } else {
-                    const pin1 = new THREE.Mesh(inPinGeo, inPinMat);
-                    pin1.position.set(-w/2 - 5, h/2, -d/4);
-                    pin1.name = "pin_in";
-                    group.add(pin1);
-                    const pin2 = new THREE.Mesh(inPinGeo, inPinMat);
-                    pin2.position.set(-w/2 - 5, h/2, d/4);
-                    pin2.name = "pin_in";
-                    group.add(pin2);
-                }
-            }
-        }
-
-        function createAttachmentSocket(yOffset) {
-            // A glowing green torus indicating you can drop something here
-            const geo = new THREE.TorusGeometry(8, 2, 8, 24);
-            geo.rotateX(Math.PI / 2);
-            const mat = new THREE.MeshBasicMaterial({ color: 0x4ade80, wireframe: true });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.y = yOffset;
-            mesh.name = "socket_visual";
-            
-            // The actual logical socket container
-            const socketGroup = new THREE.Group();
-            socketGroup.position.y = yOffset;
-            socketGroup.name = "socket";
-            socketGroup.userData = { isSocket: true }; // Tag for magnetic snap
-            
-            // Add an invisible larger sphere for easier raycasting/magnetic hitting
-            const hitGeo = new THREE.SphereGeometry(15);
-            const hitMat = new THREE.MeshBasicMaterial({ visible: false });
-            const hitMesh = new THREE.Mesh(hitGeo, hitMat);
-            hitMesh.userData = { isSocket: true }; 
-            socketGroup.add(hitMesh);
-            socketGroup.add(mesh); // Add visual to group
-
-            return socketGroup;
-        }
-
-        function build3DComponent(type, isGhost = false) {
-            const group = new THREE.Group();
-            const style = componentStyles[type];
-            const [w, h, d] = style.size;
-
-            // --- ROBOTICS: MODULAR COMPONENTS ---
-
-            if (type === 'SERVO') {
-                // Motor Body
-                const bodyGeo = new THREE.BoxGeometry(w, h, d);
-                const bodyMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.7, transparent: isGhost, opacity: isGhost?0.5:1 });
-                const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-                bodyMesh.position.y = h/2;
-                bodyMesh.castShadow = !isGhost;
-                bodyMesh.userData = { isBody: true };
-                group.add(bodyMesh);
-
-                // Rotating Horn (this will spin)
-                const hornGroup = new THREE.Group();
-                hornGroup.position.y = h; // Top of box
-                hornGroup.name = "horn";
-                
-                const hornGeo = new THREE.CylinderGeometry(15, 15, 5, 16);
-                const hornMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.2 });
-                const hornMesh = new THREE.Mesh(hornGeo, hornMat);
-                hornMesh.position.y = 2.5;
-                hornMesh.castShadow = !isGhost;
-                hornGroup.add(hornMesh);
-
-                // Add an attachment socket ON the horn!
-                const socket = createAttachmentSocket(5);
-                hornGroup.add(socket);
-
-                group.add(hornGroup);
-                addLogicPins(group, w, h, d, type, true, false); // Has input, no output
-                return group;
-            }
-
-            if (type === 'ARM_LINK') {
-                // Structural Link. Note: Origin is at BOTTOM so it stacks upwards.
-                const linkGeo = new THREE.BoxGeometry(w, h, d);
-                const linkMat = new THREE.MeshStandardMaterial({ color: '#facc15', roughness: 0.4, transparent: isGhost, opacity: isGhost?0.5:1 });
-                const linkMesh = new THREE.Mesh(linkGeo, linkMat);
-                linkMesh.position.y = h/2; // Shift up so bottom is at y=0
-                linkMesh.castShadow = !isGhost;
-                linkMesh.userData = { isBody: true };
-                group.add(linkMesh);
-
-                // Add a socket at the TOP of the link
-                const socket = createAttachmentSocket(h);
-                group.add(socket);
-                return group;
-            }
-
-            if (type === 'GRIPPER') {
-                const baseGeo = new THREE.BoxGeometry(w, h, d);
-                const baseMat = new THREE.MeshStandardMaterial({ color: '#64748b', roughness: 0.5, transparent: isGhost, opacity: isGhost?0.5:1 });
-                const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-                baseMesh.position.y = h/2;
-                baseMesh.castShadow = !isGhost;
-                baseMesh.userData = { isBody: true };
-                group.add(baseMesh);
-
-                // Left Claw
-                const clawGeo = new THREE.BoxGeometry(5, 30, 15);
-                const clawMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1' });
-                const claw1 = new THREE.Mesh(clawGeo, clawMat);
-                claw1.position.set(-15, h + 15, 0);
-                claw1.name = "claw1";
-                claw1.castShadow = !isGhost;
-                group.add(claw1);
-
-                // Right Claw
-                const claw2 = new THREE.Mesh(clawGeo, clawMat);
-                claw2.position.set(15, h + 15, 0);
-                claw2.name = "claw2";
-                claw2.castShadow = !isGhost;
-                group.add(claw2);
-
-                addLogicPins(group, w, h, d, type, true, false); // Requires logic input to close
-                return group;
-            }
-
-            // --- STANDARD LOGIC CHIPS ---
-
-            const bodyGeo = new THREE.BoxGeometry(w, h, d);
-            const sideMat = new THREE.MeshStandardMaterial({ 
-                color: type === 'ARDUINO' ? '#075985' : '#1e293b', 
-                emissive: '#000000', 
-                roughness: 0.8,
-                transparent: isGhost,
-                opacity: isGhost ? 0.5 : 1.0
-            });
-            const topTexture = createLabelTexture(style.label, type === 'ARDUINO' ? '#0284c7' : '#0f172a', style.color);
-            const topMat = new THREE.MeshStandardMaterial({ 
-                map: topTexture,
-                emissive: '#000000',
-                roughness: 0.5,
-                transparent: isGhost,
-                opacity: isGhost ? 0.5 : 1.0
-            });
-            const materials = [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
-
-            const bodyMesh = new THREE.Mesh(bodyGeo, materials);
-            bodyMesh.position.y = h / 2;
-            bodyMesh.castShadow = !isGhost;
-            bodyMesh.receiveShadow = true;
-            bodyMesh.userData = { isBody: true }; 
-            group.add(bodyMesh);
-
-            addLogicPins(group, w, h, d, type, type !== 'SWITCH', type !== 'LED');
-
-            if (type === 'LED') {
-                const bulbGeo = new THREE.SphereGeometry(15, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-                const bulbMat = new THREE.MeshStandardMaterial({ color: '#1e293b', emissive: '#000000', roughness: 0.1 });
-                const bulbMesh = new THREE.Mesh(bulbGeo, bulbMat);
-                bulbMesh.position.y = h;
-                bulbMesh.name = "indicator"; 
-                group.add(bulbMesh);
-            } else if (type === 'SWITCH') {
-                const toggleGeo = new THREE.BoxGeometry(20, 10, 20);
-                const toggleMat = new THREE.MeshStandardMaterial({ color: '#475569' });
-                const toggleMesh = new THREE.Mesh(toggleGeo, toggleMat);
-                toggleMesh.position.y = h + 5;
-                toggleMesh.name = "indicator";
-                group.add(toggleMesh);
-            }
-
-            return group;
-        }
-
-        function createWire3D(p1, p2, isActive) {
-            const curve = new THREE.QuadraticBezierCurve3(
-                p1,
-                // Control point lifts up dynamically based on distance to look natural
-                new THREE.Vector3((p1.x+p2.x)/2, Math.max(p1.y, p2.y) + 60, (p1.z+p2.z)/2),
-                p2
-            );
-            const tubeGeo = new THREE.TubeGeometry(curve, 20, 2.5, 8, false);
-            const tubeMat = new THREE.MeshStandardMaterial({
-                color: isActive ? '#60a5fa' : '#334155',
-                emissive: isActive ? '#2563eb' : '#000000',
-                roughness: 0.4
-            });
-            const mesh = new THREE.Mesh(tubeGeo, tubeMat);
-            mesh.castShadow = true;
-            return mesh;
-        }
-
-        // --- 7. State Update & Tutorial ---
-        function update3DVisuals() {
-            placedComponents.forEach(comp => {
-                const style = componentStyles[comp.type];
-                const indicator = comp.group3d.getObjectByName("indicator");
-                
-                if (comp.type === 'LED' && indicator) {
-                    indicator.material.emissive.set(comp.state ? style.active : '#000000');
-                    indicator.material.color.set(comp.state ? '#ffffff' : '#1e293b');
-                } else if (comp.type === 'SWITCH' && indicator) {
-                    indicator.material.color.set(comp.state ? style.active : '#475569');
-                    indicator.position.z = comp.state ? -10 : 10;
-                }
-            });
-
-            // Rebuild Wires - Since objects are stacked, pins move through world space!
-            wires.forEach(w => {
-                if (w.mesh3d) scene.remove(w.mesh3d);
-                
-                const src = placedComponents.find(c => c.id === w.from);
-                const tgt = placedComponents.find(c => c.id === w.to);
-                
-                if (src && tgt) {
-                    // Extract exact WORLD position of the pins, no matter how deep in the hierarchy
-                    const srcPin = src.group3d.getObjectByName("pin_out");
-                    const tgtPin = tgt.group3d.getObjectByName("pin_in");
-                    
-                    if(srcPin && tgtPin) {
-                        const p1 = new THREE.Vector3();
-                        srcPin.getWorldPosition(p1);
-                        const p2 = new THREE.Vector3();
-                        tgtPin.getWorldPosition(p2);
-                        
-                        w.mesh3d = createWire3D(p1, p2, src.state);
-                        scene.add(w.mesh3d);
-                    }
-                }
-            });
-        }
-
-        function simulateLogic() {
-            placedComponents.forEach(c => { if (c.type !== 'SWITCH') c.inputs = []; });
-
-            wires.forEach(w => {
-                const src = placedComponents.find(c => c.id === w.from);
-                const tgt = placedComponents.find(c => c.id === w.to);
-                if (src && tgt) tgt.inputs.push(src.state);
-            });
-
-            placedComponents.forEach(c => {
-                let i1 = c.inputs[0] || false;
-                let i2 = c.inputs[1] || false;
-                switch(c.type) {
-                    case 'AND': c.state = i1 && i2; break;
-                    case 'OR':  c.state = i1 || i2; break;
-                    case 'XOR': c.state = i1 !== i2; break;
-                    case 'LED': c.state = c.inputs.some(v=>v); break;
-                    case 'ARDUINO': c.state = c.inputs.some(v=>v); break; 
-                    case 'SERVO': c.state = c.inputs.some(v=>v); break; 
-                    case 'GRIPPER': c.state = c.inputs.some(v=>v); break;
-                }
-            });
-            
-            update3DVisuals();
-            checkTutorial();
-        }
-
-        // --- Academy Courses & Dynamic Tutorial Logic ---
-        
-        const courseData = {
-            'logic': {
-                title: "101: Logic & Computing",
-                icon: "fa-microchip",
-                description: "Learn the fundamentals of binary logic, logic gates, and how CPUs add numbers together.",
-                content: `
-                    <h1 class="text-4xl font-extrabold text-white mb-4">Logic & Computing Fundamentals</h1>
-                    <p class="text-indigo-300 text-xl border-l-4 border-indigo-500 pl-4 mb-6">At the heart of every computer, from a simple calculator to a massive supercomputer, are simple switches that can either be ON (1) or OFF (0).</p>
-                    <h3 class="text-2xl font-bold text-sky-400 mb-3 mt-6"><i class="fa-solid fa-toggle-on"></i> The Basics: Input and Output</h3>
-                    <p class="mb-3">A circuit needs a power source (Input) and a destination (Output). In our lab, we use <b>Switches</b> to provide logic HIGH (ON) or LOW (OFF), and <b>LEDs</b> to visually see the output.</p>
-                    <h3 class="text-2xl font-bold text-sky-400 mb-3 mt-6"><i class="fa-solid fa-diagram-project"></i> Logic Gates</h3>
-                    <ul class="list-disc list-inside space-y-2 ml-4">
-                        <li><b>AND Gate (&):</b> Only turns ON if ALL its inputs are ON. It represents multiplication.</li>
-                        <li><b>OR Gate (≥1):</b> Turns ON if AT LEAST ONE input is ON. It represents addition.</li>
-                        <li><b>XOR Gate (=1):</b> Exclusive OR. Turns ON if EXACTLY ONE input is ON, but not both. Crucial for binary addition.</li>
-                    </ul>
-                    <h3 class="text-2xl font-bold text-sky-400 mb-3 mt-6"><i class="fa-solid fa-calculator"></i> The Half-Adder</h3>
-                    <p>To make a computer add 1 + 1, you combine an XOR gate (to get the Sum) and an AND gate (to calculate the Carry over). This is the building block of the Pentium CPU!</p>
-                `,
-                missions: [
-                    {
-                        title: "Level 1: Power it Up",
-                        desc: `Let's build! Drag a <b class="text-white">SWITCH</b> onto the board. Give it a quick pinch to turn it ON.`,
-                        check: () => placedComponents.some(c => c.type === 'SWITCH' && c.state === true)
-                    },
-                    {
-                        title: "Level 2: Wiring",
-                        desc: `Drag an <b>LED</b>. Pinch the <b>Blue Output Pin</b> on the Switch and drag a wire to the LED. Turn the Switch ON!`,
-                        check: () => placedComponents.some(c => c.type === 'LED' && c.state === true)
-                    },
-                    {
-                        title: "Level 3: The AND Gate",
-                        desc: `Clear the board. Place 2 <b>Switches</b>, 1 <b>AND</b> gate, 1 <b>LED</b>. Wire Switches -> AND -> LED. Turn BOTH switches ON to light it.`,
-                        check: () => placedComponents.some(c => c.type === 'LED' && c.state === true) && placedComponents.some(c => c.type === 'AND')
-                    },
-                    {
-                        title: "Level 4: The Half Adder",
-                        desc: `Let's add 1+1! Place 2 Switches, 1 <b>XOR</b>, 1 <b>AND</b>, and 2 LEDs. Wire both switches into BOTH gates. Wire XOR to LED 1 (Sum), and AND to LED 2 (Carry).`,
-                        check: () => placedComponents.filter(c => c.type === 'LED').length >= 2 && placedComponents.some(c => c.type === 'XOR') && placedComponents.some(c => c.type === 'AND') && wires.length >= 6
-                    }
-                ]
-            },
-            'robotics': {
-                title: "201: Robotic Arm Construction",
-                icon: "fa-robot",
-                description: "Bridge the gap between software and the physical world. Learn to assemble and control a robotic arm.",
-                content: `
-                    <h1 class="text-4xl font-extrabold text-white mb-4">Constructing a Robotic Arm</h1>
-                    <p class="text-indigo-300 text-xl border-l-4 border-indigo-500 pl-4 mb-6">Robotics bridges the gap between software logic and physical kinematics. This guide explains how to construct a modular 3D arm.</p>
-                    <h3 class="text-2xl font-bold text-sky-400 mb-3"><i class="fa-solid fa-gear"></i> Servos vs Motors</h3>
-                    <p class="mb-3">Standard DC motors just spin continuously. <b>Servo motors</b> have internal encoders, meaning you can tell them exactly what angle to point at. They are the joints of your robot.</p>
-                    <h3 class="text-2xl font-bold text-sky-400 mb-3 mt-6"><i class="fa-solid fa-cubes"></i> Modular Stacking</h3>
-                    <p class="mb-3">In this virtual lab, you construct robots by physically stacking parts. Look for the <b>Green Sockets</b> on top of motors and structural links.</p>
-                    <ul class="list-disc list-inside space-y-2 ml-4">
-                        <li><b>Servo Motor:</b> The powered base joint.</li>
-                        <li><b>Arm Link:</b> Structural skeleton. Can be stacked on servos to increase reach.</li>
-                        <li><b>Gripper Claw:</b> The "End Effector" that interacts with the world.</li>
-                    </ul>
-                    <h3 class="text-2xl font-bold text-sky-400 mb-3 mt-6"><i class="fa-solid fa-code"></i> Arduino Control</h3>
-                    <p class="mb-3">In the real world, an Arduino maps analog signals to PWM signals to move the arm. In this lab, we will wire simple switches directly into the mechanical inputs to trigger them.</p>
-                `,
-                missions: [
-                    {
-                        title: "Level 1: Meet the Servo",
-                        desc: `Place a <b>SWITCH</b> and a <b class="text-indigo-400">SERVO MOTOR</b>. Wire the switch to the motor's input pin. Turn it ON to see the motor head spin!`,
-                        check: () => placedComponents.some(c => c.type === 'SERVO' && c.state === true)
-                    },
-                    {
-                        title: "Level 2: Structural Building",
-                        desc: `Now, drag an <b class="text-yellow-500">ARM LINK</b> from the Parts Bin and drop it directly onto the <b>Green Socket</b> on top of the Servo. It will stack!`,
-                        check: () => placedComponents.some(c => c.type === 'ARM_LINK' && c.parentId != null)
-                    },
-                    {
-                        title: "Level 3: The Gripper",
-                        desc: `Drag a <b class="text-slate-400">GRIPPER</b> and drop it onto the top socket of your Arm Link. You've built a robot arm!`,
-                        check: () => placedComponents.some(c => c.type === 'GRIPPER' && c.parentId != null)
-                    },
-                    {
-                        title: "Level 4: Full Control",
-                        desc: `Place a 2nd Switch. Wire it directly to the Gripper's input pin. Turn both switches on to swivel the arm AND close the claws!`,
-                        check: () => placedComponents.some(c => c.type === 'GRIPPER' && c.state === true) && placedComponents.some(c => c.type === 'SERVO' && c.state === true)
-                    }
-                ]
-            },
-            'prototype': {
-                title: "301: Real-World Prototyping",
-                icon: "fa-plug",
-                description: "Interactive schematic showing exactly how to wire an Arduino, breadboard, power supply, and servos together for a real robot.",
-                content: `
-                    <h1 class="text-4xl font-extrabold text-white mb-4">Real-World Wiring Prototype</h1>
-                    <p class="text-indigo-300 text-xl border-l-4 border-indigo-500 pl-4 mb-6">Before building the physical mechanics, you must prototype your electronics. This diagram shows exactly how to wire an Arduino, a Breadboard, and multiple Servos together safely.</p>
-
-                    <div class="bg-slate-900 p-6 rounded-2xl border border-slate-700 relative mb-8 overflow-x-auto">
-                        <h3 class="text-xl font-bold text-white mb-4 text-center">Standard 6-Servo Wiring Schematic</h3>
-                        
-                        <div class="min-w-[700px] flex flex-col items-center gap-8 relative pb-8">
-                            
-                            <!-- Wiring Lines (Absolute) -->
-                            <svg class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 1;">
-                                <!-- Power to Breadboard -->
-                                <path d="M 250 60 L 250 160" stroke="#ef4444" stroke-width="4" fill="none" stroke-dasharray="5,5" />
-                                <path d="M 450 60 L 450 190" stroke="#3b82f6" stroke-width="4" fill="none" stroke-dasharray="5,5" />
-                                
-                                <!-- Arduino GND to Breadboard GND -->
-                                <path d="M 350 280 L 350 210" stroke="#3b82f6" stroke-width="4" fill="none" />
-                                
-                                <!-- Arduino Signal to Servo 1 -->
-                                <path d="M 400 280 L 400 240 L 550 240 L 550 360" stroke="#facc15" stroke-width="3" fill="none" />
-                            </svg>
-
-                            <!-- Components (Relative/Z-10) -->
-                            <div class="flex justify-center w-full z-10 relative">
-                                <div class="bg-slate-700 p-4 rounded-lg border-2 border-slate-500 text-center shadow-lg w-64">
-                                    <div class="font-bold text-white mb-2"><i class="fa-solid fa-plug"></i> 5V 10A Power Supply</div>
-                                    <div class="flex justify-between px-4 mt-2">
-                                        <span class="bg-red-500 text-white px-2 py-1 rounded text-xs font-bold">+ VCC</span>
-                                        <span class="bg-blue-500 text-white px-2 py-1 rounded text-xs font-bold">- GND</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="w-full max-w-2xl bg-[#e5e5e5] rounded-xl border-4 border-[#d4d4d4] p-4 flex flex-col gap-2 shadow-xl z-10 relative">
-                                <div class="h-3 w-full bg-red-500 rounded-full shadow-inner flex items-center justify-between px-2"><span class="text-[10px] text-white font-bold">+</span><span class="text-[10px] text-white font-bold">+</span></div>
-                                <div class="text-center text-slate-500 font-mono text-sm tracking-widest font-bold my-1">BREADBOARD POWER RAILS</div>
-                                <div class="h-3 w-full bg-blue-500 rounded-full shadow-inner flex items-center justify-between px-2"><span class="text-[10px] text-white font-bold">-</span><span class="text-[10px] text-white font-bold">-</span></div>
-                            </div>
-
-                            <div class="flex justify-between items-start w-full max-w-3xl z-10 relative gap-4">
-                                <div class="bg-[#0284c7] p-6 rounded-xl border-b-4 border-[#0369a1] text-center shadow-lg w-64">
-                                    <div class="font-bold text-white text-lg mb-2"><i class="fa-solid fa-microchip"></i> Arduino UNO</div>
-                                    <div class="grid grid-cols-2 gap-2 text-xs font-mono text-sky-100 mt-4 bg-sky-900/50 p-2 rounded">
-                                        <div>GND Pin</div>
-                                        <div>PWM Pins</div>
-                                        <div class="text-blue-300">connects to rail</div>
-                                        <div class="text-yellow-300">3,5,6,9,10,11</div>
-                                    </div>
-                                </div>
-
-                                <div class="flex-1 grid grid-cols-3 gap-3">
-                                    <!-- Servos -->
-                                    <div class="bg-slate-800 p-3 rounded border border-slate-600 flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-300 mb-2">Base Servo</div>
-                                        <div class="flex gap-1">
-                                            <div class="w-3 h-3 bg-red-500 rounded-full" title="VCC"></div>
-                                            <div class="w-3 h-3 bg-blue-500 rounded-full" title="GND"></div>
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full" title="PWM Signal"></div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-slate-800 p-3 rounded border border-slate-600 flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-300 mb-2">Shoulder Servo</div>
-                                        <div class="flex gap-1">
-                                            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-slate-800 p-3 rounded border border-slate-600 flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-300 mb-2">Elbow Servo</div>
-                                        <div class="flex gap-1">
-                                            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                                        </div>
-                                    </div>
-                                     <div class="bg-slate-800 p-3 rounded border border-slate-600 flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-300 mb-2">Wrist P. Servo</div>
-                                        <div class="flex gap-1">
-                                            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-slate-800 p-3 rounded border border-slate-600 flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-300 mb-2">Wrist R. Servo</div>
-                                        <div class="flex gap-1">
-                                            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-slate-800 p-3 rounded border border-slate-600 flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-300 mb-2">Gripper Servo</div>
-                                        <div class="flex gap-1">
-                                            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-                        <div class="bg-indigo-900/20 border border-indigo-500/30 p-6 rounded-xl">
-                            <h4 class="text-xl font-bold text-indigo-400 mb-3">1. Power Routing</h4>
-                            <p class="text-sm text-slate-300">The 5V 10A power supply connects <b>ONLY</b> to the Breadboard rails. <b>Do not</b> plug it into the Arduino's 5V pin, as high current will fry the board. All servo Red wires go to the Red rail. All servo Brown/Black wires go to the Blue rail.</p>
-                        </div>
-                        <div class="bg-indigo-900/20 border border-indigo-500/30 p-6 rounded-xl">
-                            <h4 class="text-xl font-bold text-indigo-400 mb-3">2. Common Ground</h4>
-                            <p class="text-sm text-slate-300">Run a single wire from the Arduino's <b>GND</b> pin to the Breadboard's Blue rail. This "Common Ground" is mandatory; without it, the PWM logic signals have no reference voltage and the servos will twitch uncontrollably.</p>
-                        </div>
-                    </div>
-                `,
-                missions: [
-                    {
-                        title: "Level 1: The Microcontroller",
-                        desc: `Let's prototype! Place an <b class="text-sky-500">Arduino CPU</b> on the board. This is the brain of your robot.`,
-                        check: () => placedComponents.some(c => c.type === 'ARDUINO')
-                    },
-                    {
-                        title: "Level 2: Actuators",
-                        desc: `Place a <b class="text-indigo-400">SERVO MOTOR</b> nearby. Notice how the Arduino has multiple input/output pins to handle many servos!`,
-                        check: () => placedComponents.some(c => c.type === 'ARDUINO') && placedComponents.some(c => c.type === 'SERVO')
-                    },
-                    {
-                        title: "Level 3: Logic Wiring",
-                        desc: `Wire the Arduino's Output Pin to the Servo's Input Pin. This represents the YELLOW PWM signal wire from the schematic!`,
-                        check: () => wires.some(w => {
-                            const src = placedComponents.find(c => c.id === w.from);
-                            const tgt = placedComponents.find(c => c.id === w.to);
-                            return src && tgt && src.type === 'ARDUINO' && tgt.type === 'SERVO';
-                        })
-                    },
-                    {
-                        title: "Level 4: Input Stimulus",
-                        desc: `Place a <b>SWITCH</b>. Wire the switch to one of the Arduino's Input Pins to represent a sensor. Turn it ON to fire the servo!`,
-                        check: () => placedComponents.some(c => c.type === 'SWITCH' && c.state === true) && placedComponents.some(c => c.type === 'SERVO' && c.state === true)
-                    }
-                ]
-            }
-        };
-
-        let currentCourseId = 'logic';
-        let currentLevel = 0;
-        let tutorialLevels = courseData[currentCourseId].missions;
-
-        function renderCourseMenu() {
-            const listContainer = document.getElementById('course-list-container');
-            listContainer.innerHTML = '';
-            
-            Object.keys(courseData).forEach(key => {
-                const data = courseData[key];
-                const isActive = key === currentCourseId;
-                const btn = document.createElement('div');
-                btn.className = `course-btn p-4 rounded-xl border border-slate-700 cursor-pointer flex flex-col gap-2 ${isActive ? 'active' : 'hover:bg-slate-800'}`;
-                btn.dataset.course = key;
-                btn.innerHTML = `
-                    <div class="font-bold text-lg text-white flex items-center gap-2">
-                        <i class="fa-solid ${data.icon} text-indigo-400 w-6"></i> ${data.title}
-                    </div>
-                    <div class="text-sm text-slate-400 leading-tight">${data.description}</div>
-                `;
-                btn.addEventListener('click', () => loadCourseContent(key));
-                listContainer.appendChild(btn);
-            });
-        }
-
-        function loadCourseContent(courseId) {
-            currentCourseId = courseId;
-            renderCourseMenu(); // Update active state
-            document.getElementById('course-content-container').innerHTML = courseData[courseId].content;
-        }
-
-        function startCourseMissions() {
-            tutorialLevels = courseData[currentCourseId].missions;
-            currentLevel = 0;
-            document.getElementById('courses-modal').classList.add('hidden');
-            
-            // Re-render tutorial UI
-            const statusEl = document.getElementById('assistant-status');
-            document.getElementById('assistant-title').textContent = tutorialLevels[0].title;
-            document.getElementById('assistant-text').innerHTML = tutorialLevels[0].desc;
-            statusEl.textContent = 'COURSE STARTED';
-            statusEl.className = 'px-4 py-2 bg-indigo-600 text-white rounded-full text-xs font-bold border border-indigo-500 shadow-inner text-center';
-            
-            if(audioCtx) playBeep(800, 'triangle', 0.2);
-        }
-
-        function checkTutorial() {
-            if (currentLevel >= tutorialLevels.length) return;
-            const level = tutorialLevels[currentLevel];
-            const statusEl = document.getElementById('assistant-status');
-            
-            if (statusEl.textContent !== 'SUCCESS!' && level.check()) {
-                statusEl.textContent = 'SUCCESS!';
-                statusEl.className = 'px-4 py-2 bg-green-600 text-white rounded-full text-xs font-bold border border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.5)] text-center';
-                playBeep(1000, 'sine', 0.1);
-                setTimeout(() => playBeep(1200, 'sine', 0.2), 150);
-
-                setTimeout(() => {
-                    currentLevel++;
-                    if(currentLevel >= tutorialLevels.length) {
-                        document.getElementById('assistant-title').textContent = 'Course Completed! 🎓';
-                        document.getElementById('assistant-text').textContent = 'You have mastered this topic! Open the Academy to select a new course.';
-                    } else {
-                        document.getElementById('assistant-title').textContent = tutorialLevels[currentLevel].title;
-                        document.getElementById('assistant-text').innerHTML = tutorialLevels[currentLevel].desc;
-                        statusEl.textContent = 'IN PROGRESS';
-                        statusEl.className = 'px-4 py-2 bg-slate-700 text-slate-400 rounded-full text-xs font-bold border border-slate-600 shadow-inner text-center';
-                    }
-                }, 4000);
-            }
-        }
-
-        // --- Audio ---
-        let audioCtx;
-        function playBeep(freq = 440, type = 'sine', duration = 0.1, vol = 0.1) {
-            if (!audioCtx) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + duration);
-        }
-
-        // --- 8. Hand Interaction Logic ---
-        
-        function getRaycastIntersection() {
-            const rect = container.getBoundingClientRect();
-            const nx = ((cursorX - rect.left) / rect.width) * 2 - 1;
-            const ny = -((cursorY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
-            return raycaster;
-        }
-
-        function isDescendant(child, potentialParentId) {
-            let currentId = potentialParentId;
-            while(currentId) {
-                if (currentId === child.id) return true;
-                const parent = placedComponents.find(c => c.id === currentId);
-                currentId = parent ? parent.parentId : null;
-            }
-            return false;
-        }
-
-        function getClosest3DTarget(clientX, clientY) {
-            const rect = container.getBoundingClientRect();
-            if (clientX < rect.left) return null; 
-
-            let closestDist = 90; 
-            let closestTarget = null;
-
-            placedComponents.forEach(comp => {
-                // 1. Sockets (Highest priority for stacking!)
-                let socketMesh = comp.group3d.getObjectByName("socket");
-                if (socketMesh) {
-                    let pos = new THREE.Vector3();
-                    socketMesh.getWorldPosition(pos);
-                    pos.project(camera);
-                    let screenX = (pos.x * .5 + .5) * rect.width + rect.left;
-                    let screenY = (pos.y * -.5 + .5) * rect.height + rect.top;
-                    
-                    let dist = Math.hypot(clientX - screenX, clientY - screenY);
-                    // Sockets get priority radius
-                    if (dist < 100 && dist <= closestDist + 30) { 
-                        closestDist = dist;
-                        closestTarget = { type: 'SOCKET', comp: comp, mesh: socketMesh, screenX, screenY };
-                    }
-                }
-
-                // 2. Pins
-                let pinMesh = comp.group3d.getObjectByName("pin_out");
-                if (pinMesh) {
-                    let pos = new THREE.Vector3();
-                    pinMesh.getWorldPosition(pos);
-                    pos.project(camera);
-                    let screenX = (pos.x * .5 + .5) * rect.width + rect.left;
-                    let screenY = (pos.y * -.5 + .5) * rect.height + rect.top;
-                    
-                    let dist = Math.hypot(clientX - screenX, clientY - screenY);
-                    if (dist < 80 && dist <= closestDist + 20 && (!closestTarget || closestTarget.type !== 'SOCKET')) { 
-                        closestDist = dist;
-                        closestTarget = { type: 'PIN', comp: comp, mesh: pinMesh, screenX, screenY };
-                    }
-                }
-
-                // 3. Body
-                let bodyMesh = comp.group3d.children.find(m => m.userData.isBody);
-                if (bodyMesh && (!closestTarget || (closestTarget.type !== 'SOCKET' && closestTarget.type !== 'PIN'))) {
-                    let pos = new THREE.Vector3();
-                    bodyMesh.getWorldPosition(pos);
-                    pos.project(camera);
-                    let screenX = (pos.x * .5 + .5) * rect.width + rect.left;
-                    let screenY = (pos.y * -.5 + .5) * rect.height + rect.top;
-                    
-                    let dist = Math.hypot(clientX - screenX, clientY - screenY);
-                    if (dist < closestDist) {
-                        closestDist = dist;
-                        closestTarget = { type: 'BODY', comp: comp, mesh: bodyMesh, screenX, screenY };
-                    }
-                }
-            });
-
-            return closestTarget;
-        }
-
-        function onPinchStart() {
-            pinchStartPos = { x: cursorX, y: cursorY };
-            
-            cursorEl.style.display = 'none';
-            const hitElement = document.elementFromPoint(cursorX, cursorY);
-            cursorEl.style.display = 'block';
-
-            if (hitElement) {
-                const spawner = hitElement.closest('.spawner-btn');
-                if (spawner) {
-                    draggingNewType = spawner.dataset.type;
-                    ghostMesh = build3DComponent(draggingNewType, true);
-                    scene.add(ghostMesh);
-                    playBeep(600, 'sine', 0.1);
-                    return;
-                }
-                
-                const openCourseBtn = hitElement.closest('#btn-courses');
-                if (openCourseBtn) {
-                    document.getElementById('courses-modal').classList.remove('hidden');
-                    playBeep(600, 'sine', 0.1);
-                    return;
-                }
-                const closeCourseBtn = hitElement.closest('#close-courses-btn');
-                if (closeCourseBtn) {
-                    document.getElementById('courses-modal').classList.add('hidden');
-                    playBeep(400, 'sine', 0.1);
-                    return;
-                }
-                const courseItemBtn = hitElement.closest('.course-btn');
-                if (courseItemBtn) {
-                    loadCourseContent(courseItemBtn.dataset.course);
-                    playBeep(500, 'triangle', 0.1);
-                    return;
-                }
-                const startMissionBtn = hitElement.closest('#start-course-btn');
-                if (startMissionBtn) {
-                    startCourseMissions();
-                    return;
-                }
-            }
-
-            if (currentMagneticTarget) {
-                if (currentMagneticTarget.type === 'PIN') {
-                    draggingWireFrom = currentMagneticTarget.comp;
-                    playBeep(700, 'triangle', 0.1);
-                } else if (currentMagneticTarget.type === 'BODY' || currentMagneticTarget.type === 'SOCKET') {
-                    // Pick up component (detaches it if it was stacked)
-                    draggingNode = currentMagneticTarget.comp;
-                    
-                    if (draggingNode.parentId) {
-                        // Pop out of hierarchy back to scene
-                        scene.attach(draggingNode.group3d); // Keeps world transform momentarily
-                        draggingNode.parentId = null;
-                    }
-                    
-                    playBeep(400, 'sine', 0.1);
-                }
-            } else if (cursorX > container.getBoundingClientRect().left) {
-                isRotatingCam = true;
-                startCamAngle = camAngle;
-                playBeep(300, 'sine', 0.05);
-            }
-        }
-
-        function onPinchEnd() {
-            const rect = container.getBoundingClientRect();
-            const distanceMoved = Math.hypot(cursorX - pinchStartPos.x, cursorY - pinchStartPos.y);
-
-            const ray = getRaycastIntersection();
-            let dropPoint = new THREE.Vector3();
-            ray.ray.intersectPlane(planeY0, dropPoint);
-
-            if (isRotatingCam) {
-                isRotatingCam = false;
-            }
-            else if (draggingNewType && ghostMesh) {
-                scene.remove(ghostMesh);
-                ghostMesh = null;
-
-                if (cursorX > rect.left) {
-                    saveState(); 
-                    
-                    const newComp = {
-                        id: Date.now(),
-                        type: draggingNewType,
-                        x: 0, z: 0, parentId: null,
-                        state: false, inputs: [],
-                        group3d: build3DComponent(draggingNewType)
-                    };
-                    newComp.group3d.userData.id = newComp.id;
-                    
-                    let target = getClosest3DTarget(cursorX, cursorY);
-                    if (target && target.type === 'SOCKET') {
-                        // Stack it!
-                        newComp.parentId = target.comp.id;
-                        target.mesh.add(newComp.group3d);
-                        newComp.group3d.position.set(0,0,0);
-                        playBeep(1200, 'square', 0.1);
-                    } else if (dropPoint) {
-                        // Floor
-                        const snapX = Math.round(dropPoint.x / GRID_SIZE) * GRID_SIZE;
-                        const snapZ = Math.round(dropPoint.z / GRID_SIZE) * GRID_SIZE;
-                        newComp.x = snapX;
-                        newComp.z = snapZ;
-                        scene.add(newComp.group3d);
-                        newComp.group3d.position.set(snapX, 0, snapZ);
-                        playBeep(1000, 'square', 0.05);
-                    }
-                    placedComponents.push(newComp);
-                    simulateLogic();
-                }
-                draggingNewType = null;
-            }
-            
-            else if (draggingNode) {
-                if (draggingNode.type === 'SWITCH' && distanceMoved < 15) {
-                    saveState(); 
-                    draggingNode.state = !draggingNode.state;
-                    playBeep(draggingNode.state ? 800 : 500, 'square', 0.1);
-                } 
-                else if (cursorX < rect.left) { 
-                    saveState(); 
-                    // To delete a stacked component safely, we need to delete its children too, but for simplicity we let them float or delete them
-                    // Let's just delete the node and associated wires
-                    scene.remove(draggingNode.group3d);
-                    placedComponents = placedComponents.filter(c => c.id !== draggingNode.id && c.parentId !== draggingNode.id); // Simple cascade delete
-                    
-                    wires = wires.filter(w => {
-                        if (w.from === draggingNode.id || w.to === draggingNode.id) {
-                            if(w.mesh3d) scene.remove(w.mesh3d);
-                            return false;
-                        }
-                        return true;
-                    });
-                    playBeep(200, 'sawtooth', 0.15);
-                } 
-                else { 
-                    let target = getClosest3DTarget(cursorX, cursorY);
-                    
-                    // Validate we aren't dropping onto a socket that is part of our own child tree
-                    if (target && target.type === 'SOCKET' && !isDescendant(draggingNode, target.comp.id)) {
-                        saveState();
-                        draggingNode.parentId = target.comp.id;
-                        target.mesh.add(draggingNode.group3d);
-                        draggingNode.group3d.position.set(0,0,0);
-                        draggingNode.group3d.rotation.set(0,0,0);
-                        playBeep(1200, 'square', 0.1);
-                    } else if (dropPoint) {
-                        saveState(); 
-                        const snapX = Math.round(dropPoint.x / GRID_SIZE) * GRID_SIZE;
-                        const snapZ = Math.round(dropPoint.z / GRID_SIZE) * GRID_SIZE;
-                        draggingNode.parentId = null;
-                        draggingNode.x = snapX;
-                        draggingNode.z = snapZ;
-                        scene.add(draggingNode.group3d);
-                        draggingNode.group3d.position.set(snapX, 0, snapZ);
-                        draggingNode.group3d.rotation.set(0,0,0);
-                        playBeep(900, 'square', 0.05);
-                    }
-                }
-                draggingNode = null;
-                simulateLogic();
-            }
-
-            else if (draggingWireFrom) {
-                if (draggingWireMesh) {
-                    scene.remove(draggingWireMesh);
-                    draggingWireMesh = null;
-                }
-
-                if (cursorX > rect.left) {
-                    const target = getClosest3DTarget(cursorX, cursorY);
-                    // Find if target has an input pin
-                    let hasInPin = target && target.comp.group3d.getObjectByName("pin_in") != null;
-                    
-                    if (target && hasInPin && target.comp.id !== draggingWireFrom.id) {
-                        if (!wires.find(w => w.from === draggingWireFrom.id && w.to === target.comp.id)) {
-                            saveState(); 
-                            wires.push({ from: draggingWireFrom.id, to: target.comp.id, mesh3d: null });
-                            playBeep(1000, 'sine', 0.1);
-                            simulateLogic(); 
-                        }
-                    }
-                }
-                draggingWireFrom = null;
-            }
-        }
-
-        function updateDragVisuals() {
-            const rect = container.getBoundingClientRect();
-            
-            if (isRotatingCam) {
-                camAngle = startCamAngle - (cursorX - pinchStartPos.x) * 0.005;
-                camera.position.x = Math.sin(camAngle) * camRadius;
-                camera.position.z = Math.cos(camAngle) * camRadius;
-                camera.lookAt(0, 0, 0);
-            }
-            
-            if (cursorX <= rect.left) {
-                if(ghostMesh) ghostMesh.visible = false;
-                if(draggingWireMesh) draggingWireMesh.visible = false;
-                return;
-            }
-
-            const ray = getRaycastIntersection();
-            let dropPoint = new THREE.Vector3();
-            ray.ray.intersectPlane(planeY0, dropPoint);
-
-            let target = getClosest3DTarget(cursorX, cursorY);
-
-            // Dragging a New Spawned Component
-            if (draggingNewType && ghostMesh) {
-                ghostMesh.visible = true;
-                if (target && target.type === 'SOCKET') {
-                    // Visual snap to socket
-                    let pos = new THREE.Vector3();
-                    target.mesh.getWorldPosition(pos);
-                    ghostMesh.position.copy(pos);
-                } else if (dropPoint) {
-                    const snapX = Math.round(dropPoint.x / GRID_SIZE) * GRID_SIZE;
-                    const snapZ = Math.round(dropPoint.z / GRID_SIZE) * GRID_SIZE;
-                    ghostMesh.position.set(snapX, 0, snapZ);
-                }
-            } 
-            
-            // Dragging an Existing Component
-            else if (draggingNode) {
-                if (target && target.type === 'SOCKET' && !isDescendant(draggingNode, target.comp.id)) {
-                    let pos = new THREE.Vector3();
-                    target.mesh.getWorldPosition(pos);
-                    draggingNode.group3d.position.copy(pos);
-                } else if (dropPoint) {
-                    const snapX = Math.round(dropPoint.x / GRID_SIZE) * GRID_SIZE;
-                    const snapZ = Math.round(dropPoint.z / GRID_SIZE) * GRID_SIZE;
-                    draggingNode.group3d.position.set(snapX, 0, snapZ);
-                }
-                update3DVisuals(); 
-            }
-            
-            // Dragging a Wire
-            else if (draggingWireFrom) {
-                if (draggingWireMesh) scene.remove(draggingWireMesh);
-                
-                const srcPin = draggingWireFrom.group3d.getObjectByName("pin_out");
-                if(!srcPin) return;
-
-                const p1 = new THREE.Vector3();
-                srcPin.getWorldPosition(p1);
-                
-                let p2 = dropPoint ? dropPoint.clone().setY(10) : p1.clone();
-                
-                if (target && target.comp.id !== draggingWireFrom.id) {
-                    let tgtPin = target.comp.group3d.getObjectByName("pin_in");
-                    if (tgtPin) {
-                        p2 = new THREE.Vector3();
-                        tgtPin.getWorldPosition(p2);
-                    }
-                }
-
-                draggingWireMesh = createWire3D(p1, p2, draggingWireFrom.state);
-                scene.add(draggingWireMesh);
-            }
-        }
-        
-        // --- REAL TIME PHYSICS & ANIMATIONS ---
-        function updateAnimations() {
-            placedComponents.forEach(comp => {
-                if (comp.type === 'SERVO') {
-                    const horn = comp.group3d.getObjectByName("horn");
-                    if (horn) {
-                        const targetRotation = comp.state ? Math.PI / 1.5 : 0; 
-                        horn.rotation.y += (targetRotation - horn.rotation.y) * 0.1;
-                    }
-                }
-                if (comp.type === 'GRIPPER') {
-                    const claw1 = comp.group3d.getObjectByName("claw1");
-                    const claw2 = comp.group3d.getObjectByName("claw2");
-                    if (claw1 && claw2) {
-                        const c1Target = comp.state ? -2 : -10;
-                        const c2Target = comp.state ? 2 : 10;
-                        claw1.position.x += (c1Target - claw1.position.x) * 0.2;
-                        claw2.position.x += (c2Target - claw2.position.x) * 0.2;
-                    }
-                }
-            });
-            
-            // Re-render wires because parts might be moving dynamically!
-            update3DVisuals(); 
-        }
-
-        function onResults(results) {
-            if(debugCanvas.width !== videoElement.videoWidth) {
-                debugCanvas.width = videoElement.videoWidth;
-                debugCanvas.height = videoElement.videoHeight;
-            }
-            debugCtx.save();
-            debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
-
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                drawConnectors(debugCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-                drawLandmarks(debugCtx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 2});
-
-                const indexTip = landmarks[8];
-                const thumbTip = landmarks[4];
-                const middleTip = landmarks[12];
-
-                let rawX = 1 - indexTip.x;
-                let rawY = indexTip.y;
-                let targetX = ((rawX - TRACKPAD_MARGIN_X) / (1 - 2 * TRACKPAD_MARGIN_X)) * window.innerWidth;
-                let targetY = ((rawY - TRACKPAD_MARGIN_Y) / (1 - 2 * TRACKPAD_MARGIN_Y)) * window.innerHeight;
-                targetX = Math.max(0, Math.min(window.innerWidth, targetX));
-                targetY = Math.max(0, Math.min(window.innerHeight, targetY));
-
-                cursorX += (targetX - cursorX) * SMOOTHING_FACTOR;
-                cursorY += (targetY - cursorY) * SMOOTHING_FACTOR;
-
-                const indexDistance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-                const middleDistance = Math.hypot(middleTip.x - thumbTip.x, middleTip.y - thumbTip.y);
-                const PINCH_THRESHOLD = 0.06;
-                
-                let isPinchingNow = false;
-                let isUndoPinchingNow = false;
-
-                if (middleDistance < PINCH_THRESHOLD && middleDistance < indexDistance) {
-                    isUndoPinchingNow = true;
-                } else if (indexDistance < PINCH_THRESHOLD) {
-                    isPinchingNow = true;
-                }
-
-                if (undoCooldown > 0) undoCooldown--;
-                if (isUndoPinchingNow && undoCooldown === 0) {
-                    performUndo();
-                    undoCooldown = 45; 
-                }
-
-                isPinching = isPinchingNow;
-
-                if (isPinching) cursorEl.classList.add('pinching');
-                else cursorEl.classList.remove('pinching');
-
-                if (isPinching && !lastPinchState) onPinchStart();
-                if (!isPinching && lastPinchState) onPinchEnd();
-                lastPinchState = isPinching;
-
-                cursorEl.style.display = 'none';
-                const hoverElement = document.elementFromPoint(cursorX, cursorY);
-                cursorEl.style.display = 'block';
-                
-                document.querySelectorAll('.spawner-btn, .trash-zone, #btn-courses, #close-courses-btn, .course-btn, #start-course-btn').forEach(btn => btn.classList.remove('hovered-by-cursor'));
-                if (hoverElement) {
-                    const btn = hoverElement.closest('.spawner-btn, .trash-zone, #btn-courses, #close-courses-btn, .course-btn, #start-course-btn');
-                    if (btn) btn.classList.add('hovered-by-cursor');
-                }
-
-                let displayX = cursorX;
-                let displayY = cursorY;
-
-                if (hoveredObject) {
-                    // Revert old hover
-                    if(hoveredObject.material && hoveredObject.material.emissive) {
-                        hoveredObject.material.emissive.setHex(hoveredObject.currentHex || 0x000000);
-                    }
-                    if(hoveredObject.name === "socket_visual") {
-                        hoveredObject.material.color.setHex(0x4ade80);
-                    }
-                    hoveredObject = null;
-                }
-
-                if (isRotatingCam) {
-                    cursorEl.classList.add('rotating-cam');
-                } else if (!isPinching) {
-                    currentMagneticTarget = getClosest3DTarget(cursorX, cursorY);
-                    
-                    if (currentMagneticTarget) {
-                        displayX = currentMagneticTarget.screenX;
-                        displayY = currentMagneticTarget.screenY;
-                        cursorEl.classList.add('magnetic-lock');
-                        cursorEl.classList.remove('rotating-cam');
-                        
-                        hoveredObject = currentMagneticTarget.mesh;
-                        
-                        if(currentMagneticTarget.type === 'SOCKET') {
-                            // Find the visual torus to highlight
-                            const visual = hoveredObject.parent.getObjectByName("socket_visual");
-                            if(visual) {
-                                hoveredObject = visual; // Replace reference so it gets un-hovered properly
-                                visual.material.color.setHex(0xfacc15); // Yellow snap
-                            }
-                        } else if (hoveredObject.material && hoveredObject.material.emissive) {
-                            hoveredObject.currentHex = hoveredObject.material.emissive.getHex();
-                            hoveredObject.material.emissive.setHex(currentMagneticTarget.type === 'PIN' ? 0x06b6d4 : 0xfacc15); 
-                        }
-                    } else {
-                        cursorEl.classList.remove('magnetic-lock');
-                        cursorEl.classList.remove('rotating-cam');
-                    }
-                } else {
-                    cursorEl.classList.remove('magnetic-lock');
-                    if (!isRotatingCam) cursorEl.classList.remove('rotating-cam');
-                }
-
-                cursorEl.style.left = `${displayX}px`;
-                cursorEl.style.top = `${displayY}px`;
-
-            } else {
-                if (lastPinchState) onPinchEnd(); 
-                isPinching = false;
-                lastPinchState = false;
-                cursorEl.classList.remove('pinching');
-                cursorEl.classList.remove('magnetic-lock');
-                cursorEl.classList.remove('rotating-cam');
-            }
-            
-            debugCtx.restore();
-        }
-
-        // --- 9. Three.js Render Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
-            if(isPinching) updateDragVisuals();
-            updateAnimations(); // Added real-time kinematics
-            renderer.render(scene, camera);
-        }
-
-        // --- 10. Bootstrapping ---
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
-        hands.onResults(onResults);
-
-        // Allow opening/closing course modal via normal mouse clicks as fallback
-        document.getElementById('btn-courses').addEventListener('click', () => {
-            document.getElementById('courses-modal').classList.remove('hidden');
-            if(audioCtx) playBeep(600, 'sine', 0.1);
-        });
-        document.getElementById('close-courses-btn').addEventListener('click', () => {
-            document.getElementById('courses-modal').classList.add('hidden');
-            if(audioCtx) playBeep(400, 'sine', 0.1);
-        });
-        document.getElementById('start-course-btn').addEventListener('click', startCourseMissions);
-
-        // Initialize Course UI
-        renderCourseMenu();
-        loadCourseContent(currentCourseId);
-
-        document.getElementById('start-camera-btn').addEventListener('click', async () => {
-            document.getElementById('start-camera-btn').style.display = 'none';
-            document.getElementById('loading-text').classList.remove('hidden');
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-            try {
-                const camera = new Camera(videoElement, {
-                    onFrame: async () => await hands.send({image: videoElement}),
-                    width: 640, height: 480
-                });
-                await camera.start();
-                
-                document.getElementById('start-screen').classList.add('hidden');
-                cursorEl.classList.remove('hidden');
-                playBeep(600, 'sine', 0.2);
-                setTimeout(() => playBeep(800, 'sine', 0.3), 200);
-                
-                animate();
-            } catch (error) {
-                console.error(error);
-                alert("Could not access camera. Please ensure you have granted permissions.");
-                document.getElementById('start-camera-btn').style.display = 'flex';
-                document.getElementById('loading-text').classList.add('hidden');
-            }
-        });
-    </script>
+  `).join('');
+
+  el.emergencyFlags.innerHTML = state.emergency_flags.length
+    ? state.emergency_flags.map(f => `<li>${f.replaceAll('_', ' ')}</li>`).join('')
+    : '<li class="text-slate-500">No red flags yet.</li>';
+
+  const structured = {
+    chief_complaint: state.chief_complaint,
+    emergency_flags: state.emergency_flags,
+    history_questions: state.history_questions,
+    risk_factors: state.risk_factors,
+    likely_causes: ranked,
+    recommended_tests: state.recommended_tests,
+    initial_advice: state.initial_advice,
+    when_to_escalate_to_doctor: state.when_to_escalate_to_doctor
+  };
+  el.structuredOutput.textContent = JSON.stringify(structured, null, 2);
+}
+
+function pushAI(html) {
+  const row = document.createElement('div');
+  row.className = 'chat-bubble-ai rounded-xl p-3 text-sm';
+  row.innerHTML = `<div class="text-cyan-300 text-xs mb-1"><i class="fa-solid fa-robot"></i> Assistant</div>${html}`;
+  el.chat.appendChild(row);
+  el.chat.scrollTop = el.chat.scrollHeight;
+}
+
+function pushUser(text) {
+  const row = document.createElement('div');
+  row.className = 'chat-bubble-user rounded-xl p-3 text-sm';
+  row.innerHTML = `<div class="text-emerald-300 text-xs mb-1"><i class="fa-solid fa-user"></i> Patient</div>${text}`;
+  el.chat.appendChild(row);
+  el.chat.scrollTop = el.chat.scrollHeight;
+}
+
+el.symptomSelect.addEventListener('change', renderProtocolPreview);
+el.startBtn.addEventListener('click', () => initState(el.symptomSelect.value));
+el.sendBtn.addEventListener('click', () => {
+  handleAnswer(el.answerInput.value || 'unsure');
+  el.answerInput.value = '';
+});
+el.answerInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    el.sendBtn.click();
+  }
+});
+
+document.querySelectorAll('.quickAnswer').forEach(btn => {
+  btn.addEventListener('click', () => handleAnswer(btn.dataset.answer));
+});
+
+renderProtocolPreview();
+</script>
 </body>
 </html>
